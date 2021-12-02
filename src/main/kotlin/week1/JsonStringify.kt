@@ -54,15 +54,14 @@ private fun StringBuilder.appendJson(element: JsonElement) {
     }
 }
 
+private val escapes =
+    mapOf('"' to "\\\"", '\\' to "\\\\", '\b' to "\\b", '\u000c' to "\\f", '\n' to "\\n", '\r' to "\\r", '\t' to "\\t")
+
 private fun StringBuilder.appendEscaped(string: String) {
     append('"')
     for (char in string) {
-        if (char.isISOControl()) {
-            append("\\u%04X".format(char.code))
-        } else {
-            if (char == '"' || char == '\\') append('\\')
-            append(char)
-        }
+        escapes[char]?.also { append(it) }
+            ?: if (char.isISOControl()) append("\\u%04X".format(char.code)) else append(char)
     }
     append('"')
 }
