@@ -1,16 +1,79 @@
 package week2
 
-sealed class Tree<T> {
+sealed class Tree<out T> {
     override fun toString(): String = when (this) {
         is Leaf -> value.toString()
         is Node -> "($left, $right)"
     }
 }
 
-data class Leaf<T>(val value: T) : Tree<T>()
-data class Node<T>(val left: Tree<T>, val right: Tree<T>) : Tree<T>()
+data class Leaf<out T>(val value: T) : Tree<T>()
+data class Node<out T>(val left: Tree<T>, val right: Tree<T>) : Tree<T>()
 
-fun Tree<*>.count(): Int = when (this) {
-    is Leaf -> 1
-    is Node -> left.count() + right.count()
+interface TreeVisitor<in T, R> {
+    fun visitLeaf(value: T): R
+    fun beforeVisitNode(): TreeVisitor<T, R> = this
+    fun duringVisitNode(left: R): TreeVisitor<T, R>? = this
+    fun afterVisitNode(left: R, right: R): R
+}
+
+fun <T, R> Tree<T>.visit(visitor: TreeVisitor<T, R>): R = when (this) {
+    is Leaf -> visitor.visitLeaf(value)
+    is Node -> {
+        val leftVisitor = visitor.beforeVisitNode()
+        val r = left.visit(leftVisitor)
+        val rightVisitor = visitor.duringVisitNode(r)
+        if (rightVisitor == null) r else visitor.afterVisitNode(r, right.visit(rightVisitor))
+    }
+}
+
+private object TreeCountVisitor : TreeVisitor<Any?, Int> {
+    override fun visitLeaf(value: Any?): Int = 1
+    override fun afterVisitNode(left: Int, right: Int): Int = left + right
+}
+fun Tree<*>.count(): Int = visit(TreeCountVisitor)
+
+private object TreeCountAllVisitor : TreeVisitor<Any?, Int> {
+    override fun visitLeaf(value: Any?): Int = 1
+    override fun afterVisitNode(left: Int, right: Int): Int = 1 + left + right
+}
+fun Tree<*>.countAll(): Int = visit(TreeCountAllVisitor)
+
+private object TreeHeightVisitor : TreeVisitor<Any?, Int> {
+    override fun visitLeaf(value: Any?): Int = 1
+    override fun afterVisitNode(left: Int, right: Int): Int = 1 + maxOf(left, right)
+}
+fun Tree<*>.height(): Int = visit(TreeHeightVisitor)
+
+private class TreeMaximumVisitor<T>(private val comparator: Comparator<T>) : TreeVisitor<T, T> {
+    override fun visitLeaf(value: T): T = value
+    override fun afterVisitNode(left: T, right: T): T = maxOf(left, right, comparator)
+}
+fun <T : Comparable<T>> Tree<T>.biggest(): T = visit(TreeMaximumVisitor(naturalOrder()))
+
+private object TreeSumVisitor : TreeVisitor<Int, Int> {
+    override fun visitLeaf(value: Int): Int = value
+    override fun afterVisitNode(left: Int, right: Int): Int = left + right
+}
+fun Tree<Int>.sum(): Int = visit(TreeSumVisitor)
+
+private class TreeContainsVisitor<T>(private val element: T) : TreeVisitor<T, Boolean> {
+    override fun visitLeaf(value: T): Boolean = element == value
+    override fun duringVisitNode(left: Boolean): TreeVisitor<T, Boolean>? =
+        if (left) null else super.duringVisitNode(left)
+    override fun afterVisitNode(left: Boolean, right: Boolean): Boolean = left || right
+}
+operator fun <T> Tree<T>.contains(element: T): Boolean = visit(TreeContainsVisitor(element))
+
+operator fun <T> Tree<T>.plus(other: Tree<T>): Node<T> = Node(this, other)
+
+private class TreeAddToVisitor<T>(private val dest: MutableCollection<T>) : TreeVisitor<T, Unit> {
+    override fun visitLeaf(value: T) {
+        dest.add(value)
+    }
+    override fun afterVisitNode(left: Unit, right: Unit) {
+    }
+}
+fun <T> Tree<T>.toList(): List<T> = buildList {
+    visit(TreeAddToVisitor(this))
 }
