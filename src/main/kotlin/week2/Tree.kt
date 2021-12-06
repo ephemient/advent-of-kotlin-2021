@@ -17,46 +17,21 @@ interface TreeVisitor<in T, R> {
     fun afterVisitNode(left: R, right: R): R
 }
 
-private sealed class TreeVisitState<T, R>(val node: Node<T>, val visitor: TreeVisitor<T, R>) {
-    class BeforeVisitNode<T, R>(
-        node: Node<T>,
-        visitor: TreeVisitor<T, R>,
-    ) : TreeVisitState<T, R>(node, visitor)
-
-    class DuringVisitNode<T, R>(
-        node: Node<T>,
-        visitor: TreeVisitor<T, R>,
-        val left: R,
-    ) : TreeVisitState<T, R>(node, visitor)
-}
-
-fun <T, R> Tree<T>.visit(visitor: TreeVisitor<T, R>): R {
-    val stack = mutableListOf<TreeVisitState<T, R>>()
-    var focus = this to visitor
-    while (true) {
-        val (focusTree, focusVisitor) = focus
-        var result = when (focusTree) {
-            is Leaf -> focusVisitor.visitLeaf(focusTree.value)
-            is Node -> {
-                stack.add(TreeVisitState.BeforeVisitNode(focusTree, focusVisitor))
-                focus = focusTree.left to focusVisitor.beforeVisitNode()
-                continue
-            }
-        }
-        while (true) {
-            when (val state = stack.removeLastOrNull()) {
-                null -> return result
-                is TreeVisitState.BeforeVisitNode -> {
-                    val nextVisitor = state.visitor.duringVisitNode(result) ?: return result
-                    stack.add(TreeVisitState.DuringVisitNode(state.node, state.visitor, result))
-                    focus = state.node.right to nextVisitor
-                    break
-                }
-                is TreeVisitState.DuringVisitNode -> result = state.visitor.afterVisitNode(state.left, result)
-            }
+@OptIn(ExperimentalStdlibApi::class)
+fun <T, R> Tree<T>.visit(
+    visitor: TreeVisitor<T, R>,
+): R = DeepRecursiveFunction<Pair<Tree<T>, TreeVisitor<T, R>>, R> { (tree, treeVisitor) ->
+    when (tree) {
+        is Leaf -> treeVisitor.visitLeaf(tree.value)
+        is Node -> {
+            val leftVisitor = treeVisitor.beforeVisitNode()
+            val left = callRecursive(tree.left to leftVisitor)
+            val rightVisitor = treeVisitor.duringVisitNode(left) ?: return@DeepRecursiveFunction left
+            val right = callRecursive(tree.right to rightVisitor)
+            treeVisitor.afterVisitNode(left, right)
         }
     }
-}
+}(this to visitor)
 
 private object TreeCountVisitor : TreeVisitor<Any?, Int> {
     override fun visitLeaf(value: Any?): Int = 1
